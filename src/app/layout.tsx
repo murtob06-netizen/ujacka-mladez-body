@@ -3,31 +3,59 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Ujacka mládež – Body",
-  description: "Bodový systém pre dobrovoľníkov združenia Ujacka mládež",
+  description: "Bodový systém dobrovoľníkov obce Údol",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="sk">
       <body>
         <div className="container">
-          <header className="card header">
+          {/* HLAVIČKA S OBRÁZKOM OBCE ÚDOL */}
+          <header
+            className="card header"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,.45)), url(/images/obec-udol.jpg)",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              color: "white",
+            }}
+          >
             <div className="brand">
               <div className="title">Ujacka mládež</div>
-              <div className="subtitle">Bodový systém dobrovoľníkov</div>
+              <div className="subtitle">
+                Obec Údol • bodový systém dobrovoľníkov
+              </div>
             </div>
 
             <nav className="nav">
-              <a href="/">Dashboard</a>
-              <a href="/leaderboard">Rebríček</a>
-              <a href="/admin">Admin</a>
-              <a href="/auth">Login</a>
+              <a href="/" style={{ color: "white" }}>
+                Dashboard
+              </a>
+              <a href="/leaderboard" style={{ color: "white" }}>
+                Rebríček
+              </a>
+              <a href="/admin" style={{ color: "white" }}>
+                Admin
+              </a>
+              <a href="/auth" style={{ color: "white" }}>
+                Login
+              </a>
             </nav>
           </header>
 
+          {/* OBSAH STRÁNKY */}
           <main style={{ marginTop: 16 }}>{children}</main>
 
-          <div className="footer">© {new Date().getFullYear()} Ujacka mládež</div>
+          {/* PÄTIČKA */}
+          <footer className="footer">
+            © {new Date().getFullYear()} Ujacka mládež • Obec Údol
+          </footer>
         </div>
       </body>
     </html>
