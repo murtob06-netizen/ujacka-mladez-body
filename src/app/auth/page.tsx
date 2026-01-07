@@ -28,17 +28,13 @@ export default function AuthPage() {
         });
         if (error) throw error;
 
-        setMsg("Registrácia hotová. Ak ti príde e-mail, potvrď ho a potom sa prihlás.");
+        setMsg("Registrácia hotová. Skontroluj e-mail a potvrď ho, potom sa prihlás.");
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password: pass,
-      });
+      const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
       if (error) throw error;
 
-      // presmerovanie po úspešnom logine
       router.push("/");
       router.refresh();
     } catch (err: any) {
@@ -60,61 +56,52 @@ export default function AuthPage() {
   }
 
   return (
-    <div style={{ background: "white", borderRadius: 12, padding: 16 }}>
-      <h2 style={{ marginTop: 0 }}>
-        {mode === "login" ? "Prihlásenie" : "Registrácia"}
-      </h2>
+    <div className="card">
+      <h2 style={{ marginTop: 0 }}>{mode === "login" ? "Prihlásenie" : "Registrácia"}</h2>
+      <p className="muted">Použi účet dobrovoľníka Ujacka mládež.</p>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button onClick={() => setMode("login")}>Login</button>
-        <button onClick={() => setMode("register")}>Registrácia</button>
+      <div className="row" style={{ marginTop: 10 }}>
+        <button className={`btn ${mode === "login" ? "btn-primary" : ""}`} onClick={() => setMode("login")}>
+          Login
+        </button>
+        <button className={`btn ${mode === "register" ? "btn-primary" : ""}`} onClick={() => setMode("register")}>
+          Registrácia
+        </button>
       </div>
 
-      {msg && <p style={{ color: "crimson" }}>{msg}</p>}
+      {msg && (
+        <p className={msg.toLowerCase().includes("hotová") || msg.toLowerCase().includes("odoslal") ? "success" : "error"} style={{ marginTop: 10 }}>
+          {msg}
+        </p>
+      )}
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 10, maxWidth: 420 }}>
+      <form onSubmit={onSubmit} className="grid" style={{ marginTop: 12, maxWidth: 420 }}>
         {mode === "register" && (
-          <label>
+          <label className="label">
             Meno a priezvisko
-            <input
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              style={{ width: "100%", padding: 8 }}
-            />
+            <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </label>
         )}
 
-        <label>
+        <label className="label">
           E-mail
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ width: "100%", padding: 8 }}
-          />
+          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
 
-        <label>
+        <label className="label">
           Heslo
-          <input
-            type="password"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
-            style={{ width: "100%", padding: 8 }}
-          />
+          <input className="input" type="password" value={pass} onChange={(e) => setPass(e.target.value)} />
         </label>
 
-        <button type="submit" disabled={busy}>
-          {busy
-            ? "Počkaj…"
-            : mode === "login"
-            ? "Prihlásiť"
-            : "Registrovať"}
+        <button className="btn btn-primary" type="submit" disabled={busy}>
+          {busy ? "Počkaj…" : mode === "login" ? "Prihlásiť" : "Registrovať"}
         </button>
       </form>
 
-      <div style={{ marginTop: 10 }}>
-        <button onClick={resetPassword}>Zabudnuté heslo</button>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn btn-ghost" onClick={resetPassword}>
+          Zabudnuté heslo
+        </button>
       </div>
     </div>
   );

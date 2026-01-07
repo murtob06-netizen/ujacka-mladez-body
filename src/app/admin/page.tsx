@@ -32,7 +32,6 @@ export default function AdminPage() {
     }
     setRole(profile.role);
 
-    // pending žiadosti (admin cez RLS uvidí všetko)
     const { data, error } = await supabase
       .from("point_requests")
       .select("id, user_id, activity_date, category, points, note, status, created_at")
@@ -48,7 +47,6 @@ export default function AdminPage() {
     const reqs = (data ?? []) as Req[];
     setRequests(reqs);
 
-    // mená užívateľov pre zobrazenie
     const userIds = Array.from(new Set(reqs.map((r) => r.user_id)));
     if (userIds.length > 0) {
       const { data: profs, error: e2 } = await supabase
@@ -88,7 +86,7 @@ export default function AdminPage() {
 
   if (!role) {
     return (
-      <div style={{ background: "white", borderRadius: 12, padding: 16 }}>
+      <div className="card">
         <h2>Admin</h2>
         <p>
           Najprv sa prihlás: <a href="/auth">Login</a>
@@ -99,31 +97,30 @@ export default function AdminPage() {
 
   if (role !== "admin") {
     return (
-      <div style={{ background: "white", borderRadius: 12, padding: 16 }}>
+      <div className="card">
         <h2>Admin</h2>
-        <p>Nemáš admin práva. (role: {role})</p>
-        <p>Admina nastavíš v Supabase → Table Editor → profiles → role = admin.</p>
+        <p className="error">Nemáš admin práva. (role: {role})</p>
+        <p className="muted">Admina nastavíš v Supabase → Table Editor → profiles → role = admin.</p>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <section style={{ background: "white", borderRadius: 12, padding: 16 }}>
-        <h2>Schvaľovanie žiadostí</h2>
-        {err && <p style={{ color: "crimson" }}>{err}</p>}
+    <div className="grid">
+      <section className="card">
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <h2>Schvaľovanie žiadostí</h2>
+          <button className="btn btn-ghost" onClick={load}>Obnoviť</button>
+        </div>
+
+        {err && <p className="error">{err}</p>}
 
         {requests.length === 0 ? (
-          <p>Nie sú žiadne čakajúce žiadosti 🎉</p>
+          <p className="muted">Nie sú žiadne čakajúce žiadosti 🎉</p>
         ) : (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div className="list" style={{ marginTop: 10 }}>
             {requests.map((r) => (
-              <AdminCard
-                key={r.id}
-                r={r}
-                name={names[r.user_id] ?? r.user_id}
-                onDecide={decide}
-              />
+              <AdminCard key={r.id} r={r} name={names[r.user_id] ?? "Dobrovoľník"} onDecide={decide} />
             ))}
           </div>
         )}
@@ -145,41 +142,45 @@ function AdminCard({
   const [points, setPoints] = useState<number>(r.points);
 
   return (
-    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+    <div className="item">
+      <div className="row" style={{ justifyContent: "space-between" }}>
         <div>
-          <b>{name}</b> • {r.activity_date} • {r.category}
+          <b>{name}</b> • {r.activity_date} • <span className="muted">{r.category}</span>
         </div>
-        <div>
-          Body:
+        <span className="badge pending">pending</span>
+      </div>
+
+      {r.note && <div style={{ marginTop: 8 }}>{r.note}</div>}
+
+      <div className="row" style={{ marginTop: 10 }}>
+        <label className="label" style={{ width: 160 }}>
+          Body (môžeš upraviť)
           <input
+            className="input"
             type="number"
             min={1}
             max={1000}
             value={points}
             onChange={(e) => setPoints(Number(e.target.value))}
-            style={{ marginLeft: 8, width: 90, padding: 6 }}
           />
-        </div>
+        </label>
+
+        <label className="label" style={{ flex: 1, minWidth: 240 }}>
+          Komentár admina
+          <input
+            className="input"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="napr. schválené / upravené body…"
+          />
+        </label>
       </div>
 
-      {r.note && <div style={{ marginTop: 6 }}>{r.note}</div>}
-
-      <label style={{ display: "block", marginTop: 10 }}>
-        Komentár admina
-        <input
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          style={{ width: "100%", padding: 8, marginTop: 4 }}
-          placeholder="napr. schválené / upravené body…"
-        />
-      </label>
-
-      <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-        <button onClick={() => onDecide(r.id, "approved", comment, points)} style={{ padding: "8px 10px", fontWeight: 800 }}>
+      <div className="row" style={{ marginTop: 10 }}>
+        <button className="btn btn-primary" onClick={() => onDecide(r.id, "approved", comment, points)}>
           Schváliť
         </button>
-        <button onClick={() => onDecide(r.id, "rejected", comment)} style={{ padding: "8px 10px" }}>
+        <button className="btn btn-danger" onClick={() => onDecide(r.id, "rejected", comment)}>
           Zamietnuť
         </button>
       </div>

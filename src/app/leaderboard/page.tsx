@@ -11,7 +11,6 @@ export default function Leaderboard() {
     (async () => {
       setErr("");
 
-      // schválené žiadosti
       const { data: approved, error: e1 } = await supabase
         .from("point_requests")
         .select("user_id, points")
@@ -49,20 +48,27 @@ export default function Leaderboard() {
   }, []);
 
   return (
-    <div style={{ background: "white", borderRadius: 12, padding: 16 }}>
-      <h2>Celkový rebríček (schválené body)</h2>
-      {err && <p style={{ color: "crimson" }}>{err}</p>}
+    <div className="card">
+      <h2>Celkový rebríček</h2>
+      <p className="muted">Počítajú sa iba schválené body.</p>
+
+      {err && <p className="error">{err}</p>}
 
       {rows.length === 0 ? (
-        <p>Zatiaľ nie sú žiadne schválené body.</p>
+        <p className="muted">Zatiaľ nie sú žiadne schválené body.</p>
       ) : (
-        <ol style={{ paddingLeft: 20 }}>
+        <div className="list" style={{ marginTop: 10 }}>
           {rows.map((r, i) => (
-            <li key={i} style={{ marginBottom: 8 }}>
-              <b>{r.name}</b> — {r.total} bodov
-            </li>
+            <div className="item" key={i}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <b>#{i + 1}</b> {r.name}
+                </div>
+                <span className="badge approved">{r.total} bodov</span>
+              </div>
+            </div>
           ))}
-        </ol>
+        </div>
       )}
     </div>
   );

@@ -17,14 +17,28 @@ type Req = {
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<{ id: string; full_name: string; role: string } | null>(null);
+  const [profile, setProfile] = useState<{
+    id: string;
+    full_name: string;
+    role: string;
+  } | null>(null);
+
   const [requests, setRequests] = useState<Req[]>([]);
-  const [form, setForm] = useState({ activity_date: "", category: "iné", points: 1, note: "" });
+  const [form, setForm] = useState({
+    activity_date: "",
+    category: "iné",
+    points: 1,
+    note: "",
+  });
   const [err, setErr] = useState<string>("");
 
   const totals = useMemo(() => {
-    const approved = requests.filter(r => r.status === "approved").reduce((s, r) => s + r.points, 0);
-    const pending = requests.filter(r => r.status === "pending").reduce((s, r) => s + r.points, 0);
+    const approved = requests
+      .filter((r) => r.status === "approved")
+      .reduce((s, r) => s + r.points, 0);
+    const pending = requests
+      .filter((r) => r.status === "pending")
+      .reduce((s, r) => s + r.points, 0);
     return { approved, pending };
   }, [requests]);
 
@@ -34,16 +48,19 @@ export default function Dashboard() {
 
     const { profile, error } = await getMyProfile();
     if (error || !profile) {
-      setLoading(false);
       setProfile(null);
       setRequests([]);
+      setLoading(false);
       return;
     }
+
     setProfile(profile);
 
     const { data, error: e2 } = await supabase
       .from("point_requests")
-      .select("id, activity_date, category, points, note, status, admin_comment, created_at")
+      .select(
+        "id, activity_date, category, points, note, status, admin_comment, created_at"
+      )
       .order("created_at", { ascending: false });
 
     if (e2) setErr(e2.message);
@@ -85,7 +102,13 @@ export default function Dashboard() {
       return;
     }
 
-    setForm({ activity_date: "", category: "iné", points: 1, note: "" });
+    setForm({
+      activity_date: "",
+      category: "iné",
+      points: 1,
+      note: "",
+    });
+
     await load();
   }
 
@@ -95,9 +118,26 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <section style={{ background: "white", borderRadius: 12, padding: 16 }}>
-        <h2>Dashboard</h2>
+    <div className="grid">
+      {/* HEADER / KPI */}
+      <section className="card">
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div>
+            <h2>Dashboard</h2>
+            {profile && (
+              <p className="muted" style={{ marginTop: 6 }}>
+                Prihlásený: <b>{profile.full_name}</b> • rola:{" "}
+                <b>{profile.role}</b>
+              </p>
+            )}
+          </div>
+
+          {profile && (
+            <button className="btn btn-ghost" onClick={logout}>
+              Odhlásiť
+            </button>
+          )}
+        </div>
 
         {loading ? (
           <p>Načítavam…</p>
@@ -106,66 +146,109 @@ export default function Dashboard() {
             Nie si prihlásený. Choď na <a href="/auth">Login</a>.
           </p>
         ) : (
-          <>
-            <p>
-              Prihlásený: <b>{profile.full_name || "Dobrovoľník"}</b>{" "}
-              <button onClick={logout}>Odhlásiť</button>
-            </p>
-
-            <div style={{ display: "flex", gap: 12 }}>
-              <div>
-                <b>Schválené body:</b> {totals.approved}
-              </div>
-              <div>
-                <b>Čakajúce body:</b> {totals.pending}
-              </div>
+          <div className="kpi" style={{ marginTop: 12 }}>
+            <div className="box">
+              <div className="klabel">Schválené body</div>
+              <div className="kvalue">{totals.approved}</div>
             </div>
-          </>
+            <div className="box">
+              <div className="klabel">Čakajúce body</div>
+              <div className="kvalue">{totals.pending}</div>
+            </div>
+          </div>
         )}
       </section>
 
+      {/* FORM + REQUESTS */}
       {profile && (
-        <section style={{ background: "white", borderRadius: 12, padding: 16 }}>
-          <h3>Pridať body</h3>
-          {err && <p style={{ color: "red" }}>{err}</p>}
+        <div className="dashGrid">
+          {/* FORM */}
+          <section className="card">
+            <h3>Pridať body</h3>
+            {err && <p className="error">{err}</p>}
 
-          <form onSubmit={submitRequest} style={{ display: "grid", gap: 8, maxWidth: 400 }}>
-            <input
-              type="date"
-              value={form.activity_date}
-              onChange={e => setForm({ ...form, activity_date: e.target.value })}
-            />
-            <input
-              type="number"
-              min={1}
-              value={form.points}
-              onChange={e => setForm({ ...form, points: Number(e.target.value) })}
-            />
-            <textarea
-              placeholder="Poznámka"
-              value={form.note}
-              onChange={e => setForm({ ...form, note: e.target.value })}
-            />
-            <button type="submit">Odoslať na schválenie</button>
-          </form>
-        </section>
-      )}
+            <form onSubmit={submitRequest} className="grid">
+              <label className="label">
+                Dátum aktivity
+                <input
+                  className="input"
+                  type="date"
+                  value={form.activity_date}
+                  onChange={(e) =>
+                    setForm({ ...form, activity_date: e.target.value })
+                  }
+                />
+              </label>
 
-      {profile && (
-        <section style={{ background: "white", borderRadius: 12, padding: 16 }}>
-          <h3>Moje žiadosti</h3>
-          {requests.length === 0 ? (
-            <p>Zatiaľ nič.</p>
-          ) : (
-            <ul>
-              {requests.map(r => (
-                <li key={r.id}>
-                  {r.activity_date} – {r.points} bodov – <b>{r.status}</b>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+              <label className="label">
+                Body
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={form.points}
+                  onChange={(e) =>
+                    setForm({ ...form, points: Number(e.target.value) })
+                  }
+                />
+              </label>
+
+              <label className="label">
+                Poznámka
+                <textarea
+                  className="textarea"
+                  value={form.note}
+                  onChange={(e) =>
+                    setForm({ ...form, note: e.target.value })
+                  }
+                  placeholder="napr. akcia, služba, pomoc…"
+                />
+              </label>
+
+              <button className="btn btn-primary" type="submit">
+                Odoslať na schválenie
+              </button>
+            </form>
+          </section>
+
+          {/* REQUESTS */}
+          <section className="card">
+            <h3>Moje žiadosti</h3>
+
+            {requests.length === 0 ? (
+              <p className="muted">Zatiaľ nič.</p>
+            ) : (
+              <div className="list" style={{ marginTop: 10 }}>
+                {requests.map((r) => (
+                  <div className="item" key={r.id}>
+                    <div
+                      className="row"
+                      style={{ justifyContent: "space-between" }}
+                    >
+                      <div>
+                        <b>{r.activity_date}</b> • {r.points} bodov
+                      </div>
+                      <span className={`badge ${r.status}`}>
+                        {r.status}
+                      </span>
+                    </div>
+
+                    {r.note && (
+                      <div style={{ marginTop: 8 }}>{r.note}</div>
+                    )}
+
+                    {r.admin_comment && (
+                      <div style={{ marginTop: 8 }}>
+                        <small>Admin: {r.admin_comment}</small>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       )}
     </div>
   );
