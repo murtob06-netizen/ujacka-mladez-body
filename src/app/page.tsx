@@ -4,6 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { getMyProfile } from "@/lib/auth";
 
+const CATEGORIES = [
+  "Akcia (pomoc/organizácia)",
+  "Služba v klube",
+  "Brigáda / práca",
+  "Tréning / príprava",
+  "Reprezentácia združenia",
+  "Dobrovoľníctvo mimo akcie",
+  "Iné",
+] as const;
+
 type Req = {
   id: number;
   activity_date: string;
@@ -17,28 +27,19 @@ type Req = {
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<{
-    id: string;
-    full_name: string;
-    role: string;
-  } | null>(null);
-
+  const [profile, setProfile] = useState<{ id: string; full_name: string; role: string } | null>(null);
   const [requests, setRequests] = useState<Req[]>([]);
   const [form, setForm] = useState({
     activity_date: "",
-    category: "iné",
+    category: CATEGORIES[0],
     points: 1,
     note: "",
   });
   const [err, setErr] = useState<string>("");
 
   const totals = useMemo(() => {
-    const approved = requests
-      .filter((r) => r.status === "approved")
-      .reduce((s, r) => s + r.points, 0);
-    const pending = requests
-      .filter((r) => r.status === "pending")
-      .reduce((s, r) => s + r.points, 0);
+    const approved = requests.filter(r => r.status === "approved").reduce((s, r) => s + r.points, 0);
+    const pending = requests.filter(r => r.status === "pending").reduce((s, r) => s + r.points, 0);
     return { approved, pending };
   }, [requests]);
 
@@ -58,9 +59,7 @@ export default function Dashboard() {
 
     const { data, error: e2 } = await supabase
       .from("point_requests")
-      .select(
-        "id, activity_date, category, points, note, status, admin_comment, created_at"
-      )
+      .select("id, activity_date, category, points, note, status, admin_comment, created_at")
       .order("created_at", { ascending: false });
 
     if (e2) setErr(e2.message);
@@ -102,13 +101,7 @@ export default function Dashboard() {
       return;
     }
 
-    setForm({
-      activity_date: "",
-      category: "iné",
-      points: 1,
-      note: "",
-    });
-
+    setForm({ activity_date: "", category: CATEGORIES[0], points: 1, note: "" });
     await load();
   }
 
@@ -119,15 +112,13 @@ export default function Dashboard() {
 
   return (
     <div className="grid">
-      {/* HEADER / KPI */}
       <section className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div>
             <h2>Dashboard</h2>
             {profile && (
               <p className="muted" style={{ marginTop: 6 }}>
-                Prihlásený: <b>{profile.full_name}</b> • rola:{" "}
-                <b>{profile.role}</b>
+                Prihlásený: <b>{profile.full_name || "Dobrovoľník"}</b> • rola: <b>{profile.role}</b>
               </p>
             )}
           </div>
@@ -159,10 +150,8 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* FORM + REQUESTS */}
       {profile && (
         <div className="dashGrid">
-          {/* FORM */}
           <section className="card">
             <h3>Pridať body</h3>
             {err && <p className="error">{err}</p>}
@@ -174,10 +163,23 @@ export default function Dashboard() {
                   className="input"
                   type="date"
                   value={form.activity_date}
-                  onChange={(e) =>
-                    setForm({ ...form, activity_date: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, activity_date: e.target.value })}
                 />
+              </label>
+
+              <label className="label">
+                Čo som robil
+                <select
+                  className="select"
+                  value={form.category}
+                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="label">
@@ -188,21 +190,17 @@ export default function Dashboard() {
                   min={1}
                   max={1000}
                   value={form.points}
-                  onChange={(e) =>
-                    setForm({ ...form, points: Number(e.target.value) })
-                  }
+                  onChange={(e) => setForm({ ...form, points: Number(e.target.value) })}
                 />
               </label>
 
               <label className="label">
-                Poznámka
+                Poznámka (voliteľné)
                 <textarea
                   className="textarea"
                   value={form.note}
-                  onChange={(e) =>
-                    setForm({ ...form, note: e.target.value })
-                  }
-                  placeholder="napr. akcia, služba, pomoc…"
+                  onChange={(e) => setForm({ ...form, note: e.target.value })}
+                  placeholder="napr. kde/koľko hodín/čo presne…"
                 />
               </label>
 
@@ -212,7 +210,6 @@ export default function Dashboard() {
             </form>
           </section>
 
-          {/* REQUESTS */}
           <section className="card">
             <h3>Moje žiadosti</h3>
 
@@ -222,21 +219,17 @@ export default function Dashboard() {
               <div className="list" style={{ marginTop: 10 }}>
                 {requests.map((r) => (
                   <div className="item" key={r.id}>
-                    <div
-                      className="row"
-                      style={{ justifyContent: "space-between" }}
-                    >
+                    <div className="row" style={{ justifyContent: "space-between" }}>
                       <div>
                         <b>{r.activity_date}</b> • {r.points} bodov
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          {r.category}
+                        </div>
                       </div>
-                      <span className={`badge ${r.status}`}>
-                        {r.status}
-                      </span>
+                      <span className={`badge ${r.status}`}>{r.status}</span>
                     </div>
 
-                    {r.note && (
-                      <div style={{ marginTop: 8 }}>{r.note}</div>
-                    )}
+                    {r.note && <div style={{ marginTop: 8 }}>{r.note}</div>}
 
                     {r.admin_comment && (
                       <div style={{ marginTop: 8 }}>
