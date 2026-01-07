@@ -12,7 +12,7 @@ const CATEGORIES = [
   "Reprezentácia združenia",
   "Dobrovoľníctvo mimo akcie",
   "Iné",
-] as const;
+];
 
 type Req = {
   id: number;
