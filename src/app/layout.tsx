@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -6,18 +7,14 @@ export const metadata: Metadata = {
   description: "Bodový systém dobrovoľníkov obce Údol",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="sk">
       <body>
         <div className="container">
           {/* HLAVIČKA S OBRÁZKOM OBCE ÚDOL */}
           <header
-            className="card header"
+            className="card header header-hero"
             style={{
               backgroundImage:
                 "linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,.45)), url(/images/obec-udol.jpg)",
@@ -26,36 +23,35 @@ export default function RootLayout({
               color: "white",
             }}
           >
-            <div className="brand">
-              <div className="title">Ujacka mládež</div>
-              <div className="subtitle">
-                Obec Údol • bodový systém dobrovoľníkov
+            <div className="brand brand-row">
+              {/* ERB */}
+              <div className="crest">
+                <Image
+                  src="/images/erb-udol.png"
+                  alt="Erb obce Údol"
+                  width={56}
+                  height={56}
+                  priority
+                />
+              </div>
+
+              <div className="brand-text">
+                <div className="title">Ujacka mládež</div>
+                <div className="subtitle">Obec Údol • bodový systém dobrovoľníkov</div>
               </div>
             </div>
 
-            <nav className="nav">
-              <a href="/" style={{ color: "white" }}>
-                Dashboard
-              </a>
-              <a href="/leaderboard" style={{ color: "white" }}>
-                Rebríček
-              </a>
-              <a href="/admin" style={{ color: "white" }}>
-                Admin
-              </a>
-              <a href="/auth" style={{ color: "white" }}>
-                Login
-              </a>
+            <nav className="nav nav-hero">
+              <a href="/">Dashboard</a>
+              <a href="/leaderboard">Rebríček</a>
+              <a href="/admin">Admin</a>
+              <a href="/auth">Login</a>
             </nav>
           </header>
 
-          {/* OBSAH STRÁNKY */}
           <main style={{ marginTop: 16 }}>{children}</main>
 
-          {/* PÄTIČKA */}
-          <footer className="footer">
-            © {new Date().getFullYear()} Ujacka mládež • Obec Údol
-          </footer>
+          <footer className="footer">© {new Date().getFullYear()} Ujacka mládež • Obec Údol</footer>
         </div>
       </body>
     </html>
