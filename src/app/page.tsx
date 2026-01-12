@@ -5,8 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { getMyProfile } from "@/lib/auth";
 
 /**
- * TU MENÍŠ PRAVIDLÁ BODOVANIA
- * body za 1 hodinu pre každú aktivitu
+ * Bodovanie: body za 1 hodinu
  */
 const ACTIVITIES = [
   { label: "Služba v klube", pointsPerHour: 10 },
@@ -28,16 +27,23 @@ type Req = {
   created_at: string;
 };
 
+type BalanceRow = {
+  user_id: string;
+  full_name: string;
+  role: string;
+  points_earned: number;
+  points_spent: number;
+  balance: number;
+};
+
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<{
-    id: string;
-    full_name: string;
-    role: string;
-  } | null>(null);
+  const [profile, setProfile] = useState<{ id: string; full_name: string; role: string } | null>(null);
 
   const [requests, setRequests] = useState<Req[]>([]);
   const [err, setErr] = useState<string>("");
+
+  const [balances, setBalances] = useState<BalanceRow | null>(null);
 
   const [form, setForm] = useState({
     activity_date: "",
@@ -46,15 +52,10 @@ export default function Dashboard() {
     note: "",
   });
 
-  const totals = useMemo(() => {
-    const approved = requests
-      .filter((r) => r.status === "approved")
-      .reduce((s, r) => s + r.points, 0);
-    const pending = requests
-      .filter((r) => r.status === "pending")
-      .reduce((s, r) => s + r.points, 0);
-    return { approved, pending };
-  }, [requests]);
+  const previewPoints = useMemo(
+    () => form.hours * form.activity.pointsPerHour,
+    [form.hours, form.activity.pointsPerHour]
+  );
 
   async function load() {
     setErr("");
@@ -64,21 +65,36 @@ export default function Dashboard() {
     if (error || !profile) {
       setProfile(null);
       setRequests([]);
+      setBalances(null);
       setLoading(false);
       return;
     }
-
     setProfile(profile);
 
-    const { data, error: e2 } = await supabase
+    // moje žiadosti
+    const { data: reqs, error: e2 } = await supabase
       .from("point_requests")
-      .select(
-        "id, activity_date, category, points, note, status, admin_comment, created_at"
-      )
+      .select("id, activity_date, category, points, note, status, admin_comment, created_at")
       .order("created_at", { ascending: false });
 
     if (e2) setErr(e2.message);
-    setRequests((data ?? []) as Req[]);
+    setRequests((reqs ?? []) as Req[]);
+
+    // môj zostatok z view
+    const { data: bal, error: e3 } = await supabase
+      .from("user_balances")
+      .select("user_id, full_name, role, points_earned, points_spent, balance")
+      .eq("user_id", profile.id)
+      .single();
+
+    if (e3) {
+      // ak by RLS/VIEW nebolo dostupné, nech aspoň dashboard beží
+      console.error(e3);
+      setBalances(null);
+    } else {
+      setBalances(bal as BalanceRow);
+    }
+
     setLoading(false);
   }
 
@@ -114,9 +130,7 @@ export default function Dashboard() {
       activity_date: form.activity_date,
       category: form.activity.label,
       points: calculatedPoints,
-      note: `${form.hours} h × ${form.activity.pointsPerHour} b/h${
-        form.note ? " – " + form.note : ""
-      }`,
+      note: `${form.hours} h × ${form.activity.pointsPerHour} b/h${form.note ? " – " + form.note : ""}`,
       status: "pending",
     });
 
@@ -125,13 +139,7 @@ export default function Dashboard() {
       return;
     }
 
-    setForm({
-      activity_date: "",
-      activity: ACTIVITIES[0],
-      hours: 1,
-      note: "",
-    });
-
+    setForm({ activity_date: "", activity: ACTIVITIES[0], hours: 1, note: "" });
     await load();
   }
 
@@ -140,19 +148,15 @@ export default function Dashboard() {
     await load();
   }
 
-  const previewPoints = form.hours * form.activity.pointsPerHour;
-
   return (
     <div className="grid">
-      {/* HLAVIČKA + KPI */}
       <section className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div>
             <h2>Dashboard</h2>
             {profile && (
               <p className="muted" style={{ marginTop: 6 }}>
-                Prihlásený: <b>{profile.full_name}</b> • rola:{" "}
-                <b>{profile.role}</b>
+                Prihlásený: <b>{profile.full_name}</b> • rola: <b>{profile.role}</b>
               </p>
             )}
           </div>
@@ -173,21 +177,23 @@ export default function Dashboard() {
         ) : (
           <div className="kpi" style={{ marginTop: 12 }}>
             <div className="box">
-              <div className="klabel">Schválené body</div>
-              <div className="kvalue">{totals.approved}</div>
+              <div className="klabel">Zarobené body</div>
+              <div className="kvalue">{balances ? balances.points_earned : "—"}</div>
             </div>
             <div className="box">
-              <div className="klabel">Čakajúce body</div>
-              <div className="kvalue">{totals.pending}</div>
+              <div className="klabel">Minuté body</div>
+              <div className="kvalue">{balances ? balances.points_spent : "—"}</div>
+            </div>
+            <div className="box">
+              <div className="klabel">Zostatok</div>
+              <div className="kvalue">{balances ? balances.balance : "—"}</div>
             </div>
           </div>
         )}
       </section>
 
-      {/* FORM + ŽIADOSTI */}
       {profile && (
         <div className="dashGrid">
-          {/* FORM */}
           <section className="card">
             <h3>Pridať aktivitu</h3>
             {err && <p className="error">{err}</p>}
@@ -199,9 +205,7 @@ export default function Dashboard() {
                   className="input"
                   type="date"
                   value={form.activity_date}
-                  onChange={(e) =>
-                    setForm({ ...form, activity_date: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, activity_date: e.target.value })}
                 />
               </label>
 
@@ -213,9 +217,7 @@ export default function Dashboard() {
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      activity: ACTIVITIES.find(
-                        (a) => a.label === e.target.value
-                      )!,
+                      activity: ACTIVITIES.find((a) => a.label === e.target.value) ?? ACTIVITIES[0],
                     })
                   }
                 >
@@ -235,9 +237,7 @@ export default function Dashboard() {
                   min={0.5}
                   step={0.5}
                   value={form.hours}
-                  onChange={(e) =>
-                    setForm({ ...form, hours: Number(e.target.value) })
-                  }
+                  onChange={(e) => setForm({ ...form, hours: Number(e.target.value) })}
                 />
               </label>
 
@@ -250,9 +250,7 @@ export default function Dashboard() {
                 <textarea
                   className="textarea"
                   value={form.note}
-                  onChange={(e) =>
-                    setForm({ ...form, note: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, note: e.target.value })}
                   placeholder="napr. kde / čo presne / s kým…"
                 />
               </label>
@@ -263,7 +261,6 @@ export default function Dashboard() {
             </form>
           </section>
 
-          {/* ŽIADOSTI */}
           <section className="card">
             <h3>Moje žiadosti</h3>
 
@@ -273,24 +270,15 @@ export default function Dashboard() {
               <div className="list" style={{ marginTop: 10 }}>
                 {requests.map((r) => (
                   <div className="item" key={r.id}>
-                    <div
-                      className="row"
-                      style={{ justifyContent: "space-between" }}
-                    >
+                    <div className="row" style={{ justifyContent: "space-between" }}>
                       <div>
                         <b>{r.activity_date}</b> • {r.points} bodov
-                        <div className="muted" style={{ marginTop: 4 }}>
-                          {r.category}
-                        </div>
+                        <div className="muted" style={{ marginTop: 4 }}>{r.category}</div>
                       </div>
-                      <span className={`badge ${r.status}`}>
-                        {r.status}
-                      </span>
+                      <span className={`badge ${r.status}`}>{r.status}</span>
                     </div>
 
-                    {r.note && (
-                      <div style={{ marginTop: 8 }}>{r.note}</div>
-                    )}
+                    {r.note && <div style={{ marginTop: 8 }}>{r.note}</div>}
 
                     {r.admin_comment && (
                       <div style={{ marginTop: 8 }}>
