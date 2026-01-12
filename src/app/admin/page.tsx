@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { getMyProfile } from "@/lib/auth";
 
-type Req = {
+type PointReq = {
   id: number;
   user_id: string;
   activity_date: string;
@@ -12,170 +12,225 @@ type Req = {
   points: number;
   note: string;
   status: "pending" | "approved" | "rejected";
+  admin_comment: string;
   created_at: string;
 };
 
 type ProfileMini = { id: string; full_name: string | null };
-type Reward = { id: number; name: string; category: string; cost_points: number; is_active: boolean };
-type RedemptionRow = {
+
+type Reward = {
+  id: number;
+  name: string;
+  category: string;
+  cost_points: number;
+  stock_qty: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+type RewardReq = {
   id: number;
   user_id: string;
   reward_id: number;
   qty: number;
-  points_spent: number;
-  note: string;
+  points_cost: number;
+  status: "pending" | "approved" | "rejected" | "fulfilled";
+  user_note: string;
+  admin_comment: string;
+  decided_at: string | null;
+  fulfilled_at: string | null;
   created_at: string;
-  rewards?: { name: string; category: string; cost_points: number } | null;
+  rewards?: { name: string; category: string; cost_points: number; stock_qty: number } | null;
 };
+
+type AuditRow = {
+  id: number;
+  actor_id: string | null;
+  action: string;
+  table_name: string;
+  row_id: string;
+  details: any;
+  created_at: string;
+};
+
+function skStatus(s: string) {
+  if (s === "pending") return "Čaká";
+  if (s === "approved") return "Schválené";
+  if (s === "rejected") return "Zamietnuté";
+  if (s === "fulfilled") return "Vydané";
+  return s;
+}
+
+function badgeClassByStatus(s: string) {
+  if (s === "pending") return "badge pending";
+  if (s === "approved") return "badge approved";
+  if (s === "rejected") return "badge rejected";
+  // fulfilled – použijeme approved štýl, len iný text
+  if (s === "fulfilled") return "badge approved";
+  return "badge";
+}
 
 export default function AdminPage() {
   const [role, setRole] = useState<string>("");
   const [err, setErr] = useState<string>("");
+  const [busy, setBusy] = useState(false);
 
-  // pending requests
-  const [requests, setRequests] = useState<Req[]>([]);
-  const [names, setNames] = useState<Record<string, string>>({});
-
-  // rewards + users for redemption
+  // profiles for name lookup
   const [users, setUsers] = useState<ProfileMini[]>([]);
+  const userNameMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    users.forEach((u) => (m[u.id] = u.full_name || "Dobrovoľník"));
+    return m;
+  }, [users]);
+
+  // point requests
+  const [pendingReqs, setPendingReqs] = useState<PointReq[]>([]);
+
+  // rewards (catalog + stock)
   const [rewards, setRewards] = useState<Reward[]>([]);
-  const [redemptions, setRedemptions] = useState<RedemptionRow[]>([]);
 
-  // redemption form
-  const [selUserId, setSelUserId] = useState<string>("");
-  const [selRewardId, setSelRewardId] = useState<string>("");
-  const [qty, setQty] = useState<number>(1);
-  const [note, setNote] = useState<string>("");
+  // reward requests workflow
+  const [rewardReqs, setRewardReqs] = useState<RewardReq[]>([]);
+  const [rqFilter, setRqFilter] = useState<"pending" | "approved" | "rejected" | "fulfilled" | "all">("pending");
 
-  const selectedReward = useMemo(() => rewards.find(r => String(r.id) === selRewardId) ?? null, [rewards, selRewardId]);
-  const computedSpend = useMemo(() => {
-    if (!selectedReward) return 0;
-    return Number(qty) * Number(selectedReward.cost_points);
-  }, [qty, selectedReward]);
+  // audit log
+  const [audit, setAudit] = useState<AuditRow[]>([]);
 
-  async function load() {
+  async function loadAll() {
     setErr("");
+    setBusy(true);
 
     const { profile } = await getMyProfile();
     if (!profile) {
       setRole("");
-      setRequests([]);
+      setBusy(false);
       return;
     }
     setRole(profile.role);
 
-    // pending requests
-    const { data, error } = await supabase
-      .from("point_requests")
-      .select("id, user_id, activity_date, category, points, note, status, created_at")
-      .eq("status", "pending")
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      setErr(error.message);
-      setRequests([]);
-    } else {
-      const reqs = (data ?? []) as Req[];
-      setRequests(reqs);
-
-      // name map for pending list
-      const userIds = Array.from(new Set(reqs.map(r => r.user_id)));
-      if (userIds.length > 0) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", userIds);
-        const map: Record<string, string> = {};
-        (profs ?? []).forEach((p: any) => (map[p.id] = p.full_name || "Dobrovoľník"));
-        setNames(map);
-      } else {
-        setNames({});
-      }
-    }
-
-    // users (for redemption dropdown)
-    const { data: allUsers, error: uerr } = await supabase
+    // users
+    const { data: u, error: uerr } = await supabase
       .from("profiles")
       .select("id, full_name")
       .order("full_name", { ascending: true });
 
     if (uerr) setErr(uerr.message);
-    setUsers((allUsers ?? []) as ProfileMini[]);
-    if (!selUserId && (allUsers?.length ?? 0) > 0) setSelUserId((allUsers as any)[0].id);
+    setUsers((u ?? []) as ProfileMini[]);
 
-    // rewards
-    const { data: rws, error: rerr } = await supabase
+    // pending point requests
+    const { data: pr, error: prErr } = await supabase
+      .from("point_requests")
+      .select("id, user_id, activity_date, category, points, note, status, admin_comment, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true });
+
+    if (prErr) setErr(prErr.message);
+    setPendingReqs((pr ?? []) as PointReq[]);
+
+    // rewards catalog
+    const { data: rw, error: rwErr } = await supabase
       .from("rewards")
-      .select("id, name, category, cost_points, is_active")
-      .eq("is_active", true)
+      .select("id, name, category, cost_points, stock_qty, is_active, created_at")
       .order("category", { ascending: true })
       .order("name", { ascending: true });
 
-    if (rerr) setErr(rerr.message);
-    setRewards((rws ?? []) as Reward[]);
-    if (!selRewardId && (rws?.length ?? 0) > 0) setSelRewardId(String((rws as any)[0].id));
+    if (rwErr) setErr(rwErr.message);
+    setRewards((rw ?? []) as Reward[]);
 
-    // last redemptions
-    const { data: reds, error: redErr } = await supabase
-      .from("redemptions")
-      .select("id, user_id, reward_id, qty, points_spent, note, created_at, rewards(name, category, cost_points)")
+    // reward requests
+    let q = supabase
+      .from("reward_requests")
+      .select(
+        "id, user_id, reward_id, qty, points_cost, status, user_note, admin_comment, decided_at, fulfilled_at, created_at, rewards(name, category, cost_points, stock_qty)"
+      )
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(50);
 
-    if (redErr) setErr(redErr.message);
-    setRedemptions((reds ?? []) as any);
+    if (rqFilter !== "all") q = q.eq("status", rqFilter);
+
+    const { data: rr, error: rrErr } = await q;
+    if (rrErr) setErr(rrErr.message);
+    setRewardReqs((rr ?? []) as any);
+
+    // audit
+    const { data: au, error: auErr } = await supabase
+      .from("audit_log")
+      .select("id, actor_id, action, table_name, row_id, details, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (auErr) setErr(auErr.message);
+    setAudit((au ?? []) as any);
+
+    setBusy(false);
   }
 
   useEffect(() => {
-    load();
+    loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [rqFilter]);
 
-  async function decide(id: number, status: "approved" | "rejected", admin_comment: string, newPoints?: number) {
+  // ---- ACTIONS: point requests ----
+  async function decidePointRequest(id: number, status: "approved" | "rejected", admin_comment: string, newPoints?: number) {
     setErr("");
+    setBusy(true);
 
     const patch: any = {
       status,
-      admin_comment,
+      admin_comment: admin_comment || "",
       decided_at: new Date().toISOString(),
     };
     if (typeof newPoints === "number") patch.points = newPoints;
 
     const { error } = await supabase.from("point_requests").update(patch).eq("id", id);
-    if (error) return setErr(error.message);
+    if (error) setErr(error.message);
 
-    await load();
+    await loadAll();
+    setBusy(false);
   }
 
-  async function addRedemption(e: React.FormEvent) {
-    e.preventDefault();
+  // ---- ACTIONS: rewards stock ----
+  async function updateReward(rewardId: number, patch: Partial<Pick<Reward, "stock_qty" | "cost_points" | "is_active">>) {
     setErr("");
+    setBusy(true);
 
-    if (!selUserId) return setErr("Vyber dobrovoľníka.");
-    if (!selectedReward) return setErr("Vyber odmenu.");
-    if (qty <= 0) return setErr("Množstvo musí byť > 0.");
+    const { error } = await supabase.from("rewards").update(patch).eq("id", rewardId);
+    if (error) setErr(error.message);
 
-    const points_spent = Number(qty) * Number(selectedReward.cost_points);
-
-    const { error } = await supabase.from("redemptions").insert({
-      user_id: selUserId,
-      reward_id: selectedReward.id,
-      qty,
-      points_spent,
-      note: note || "",
-    });
-
-    if (error) return setErr(error.message);
-
-    setQty(1);
-    setNote("");
-    await load();
+    await loadAll();
+    setBusy(false);
   }
 
-  async function deleteRedemption(id: number) {
+  // ---- ACTIONS: reward requests workflow ----
+  async function decideRewardRequest(id: number, status: "approved" | "rejected", admin_comment: string) {
     setErr("");
-    const { error } = await supabase.from("redemptions").delete().eq("id", id);
-    if (error) return setErr(error.message);
-    await load();
+    setBusy(true);
+
+    const patch: any = {
+      status,
+      admin_comment: admin_comment || "",
+      decided_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from("reward_requests").update(patch).eq("id", id);
+    if (error) setErr(error.message);
+
+    await loadAll();
+    setBusy(false);
   }
 
+  async function fulfillRewardRequest(id: number) {
+    setErr("");
+    setBusy(true);
+
+    const { error } = await supabase.rpc("fulfill_reward_request", { p_request_id: id });
+    if (error) setErr(error.message);
+
+    await loadAll();
+    setBusy(false);
+  }
+
+  // ---- UI guards ----
   if (!role) {
     return (
       <div className="card">
@@ -201,87 +256,117 @@ export default function AdminPage() {
     <div className="grid">
       <section className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <h2>Schvaľovanie žiadostí</h2>
-          <button className="btn btn-ghost" onClick={load}>Obnoviť</button>
+          <div>
+            <h2>Admin panel</h2>
+            <p className="muted">Schvaľovanie bodov • odmeny • audit</p>
+          </div>
+          <button className="btn btn-ghost" onClick={loadAll} disabled={busy}>
+            {busy ? "Načítavam…" : "Obnoviť"}
+          </button>
         </div>
 
         {err && <p className="error">{err}</p>}
+      </section>
 
-        {requests.length === 0 ? (
-          <p className="muted">Nie sú žiadne čakajúce žiadosti 🎉</p>
+      {/* 1) Schvaľovanie bodov */}
+      <section className="card">
+        <h3>Žiadosti o body (čakajúce)</h3>
+
+        {pendingReqs.length === 0 ? (
+          <p className="muted">Žiadne čakajúce žiadosti 🎉</p>
         ) : (
           <div className="list" style={{ marginTop: 10 }}>
-            {requests.map((r) => (
-              <AdminCard key={r.id} r={r} name={names[r.user_id] ?? "Dobrovoľník"} onDecide={decide} />
+            {pendingReqs.map((r) => (
+              <PointReqCard
+                key={r.id}
+                r={r}
+                fullName={userNameMap[r.user_id] ?? "Dobrovoľník"}
+                onDecide={decidePointRequest}
+                disabled={busy}
+              />
             ))}
           </div>
         )}
       </section>
 
+      {/* 7) Sklad odmien */}
       <section className="card">
-        <h2>Odpočet bodov za odmeny</h2>
-        <p className="muted">Tu zapíšeš, čo si dobrovoľník “kúpil” za body. Body sa mu tým odpočítajú.</p>
+        <h3>Sklad odmien</h3>
+        <p className="muted">Tu upravíš ceny v bodoch a sklad (kusy). Ak je sklad 0, odmena sa nedá vydať.</p>
 
-        {err && <p className="error">{err}</p>}
+        {rewards.length === 0 ? (
+          <p className="muted">V tabuľke rewards zatiaľ nie sú položky.</p>
+        ) : (
+          <div className="list" style={{ marginTop: 10 }}>
+            {rewards.map((rw) => (
+              <RewardRow key={rw.id} rw={rw} onSave={updateReward} disabled={busy} />
+            ))}
+          </div>
+        )}
+      </section>
 
-        <form onSubmit={addRedemption} className="grid" style={{ maxWidth: 520 }}>
-          <label className="label">
-            Dobrovoľník
-            <select className="select" value={selUserId} onChange={(e) => setSelUserId(e.target.value)}>
-              {users.map(u => (
-                <option key={u.id} value={u.id}>{u.full_name || u.id}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="label">
-            Položka (odmena)
-            <select className="select" value={selRewardId} onChange={(e) => setSelRewardId(e.target.value)}>
-              {rewards.map(r => (
-                <option key={r.id} value={String(r.id)}>
-                  {r.category}: {r.name} ({r.cost_points} b)
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="label">
-            Množstvo
-            <input className="input" type="number" min={1} step={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} />
-          </label>
-
-          <div className="muted">
-            Odpočet bodov: <b>{computedSpend}</b>
+      {/* 8) Žiadosti o odmeny */}
+      <section className="card">
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div>
+            <h3>Žiadosti o odmenu</h3>
+            <p className="muted">Flow: pending → approved → vydané (fulfill). Vydanie odpočíta body a zníži sklad.</p>
           </div>
 
-          <label className="label">
-            Poznámka (voliteľné)
-            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="napr. vydané na akcii..." />
+          <label className="label" style={{ width: 240 }}>
+            Filter
+            <select className="select" value={rqFilter} onChange={(e) => setRqFilter(e.target.value as any)}>
+              <option value="pending">Čaká</option>
+              <option value="approved">Schválené</option>
+              <option value="fulfilled">Vydané</option>
+              <option value="rejected">Zamietnuté</option>
+              <option value="all">Všetko</option>
+            </select>
           </label>
+        </div>
 
-          <button className="btn btn-primary" type="submit">Odpočítať body</button>
-        </form>
+        {rewardReqs.length === 0 ? (
+          <p className="muted">Zatiaľ žiadne žiadosti.</p>
+        ) : (
+          <div className="list" style={{ marginTop: 10 }}>
+            {rewardReqs.map((rr) => (
+              <RewardReqCard
+                key={rr.id}
+                rr={rr}
+                fullName={userNameMap[rr.user_id] ?? "Dobrovoľník"}
+                onDecide={decideRewardRequest}
+                onFulfill={fulfillRewardRequest}
+                disabled={busy}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
-        <h3 style={{ marginTop: 18 }}>Posledné odpočty</h3>
-        {redemptions.length === 0 ? (
+      {/* 9) Audit log */}
+      <section className="card">
+        <h3>Audit log (posledných 50)</h3>
+        <p className="muted">Kto čo zmenil: schvaľovanie bodov, odpočty, žiadosti o odmeny.</p>
+
+        {audit.length === 0 ? (
           <p className="muted">Zatiaľ nič.</p>
         ) : (
           <div className="list" style={{ marginTop: 10 }}>
-            {redemptions.map((r) => (
-              <div className="item" key={r.id}>
+            {audit.map((a) => (
+              <div className="item" key={a.id}>
                 <div className="row" style={{ justifyContent: "space-between" }}>
                   <div>
-                    <b>{users.find(u => u.id === r.user_id)?.full_name ?? "Dobrovoľník"}</b>
+                    <b>{a.table_name}</b> • {a.action} • row {a.row_id}
                     <div className="muted" style={{ marginTop: 4 }}>
-                      {r.rewards?.category}: {r.rewards?.name} • qty {r.qty} • -{r.points_spent} b
+                      actor: {a.actor_id ?? "—"} • {new Date(a.created_at).toLocaleString()}
                     </div>
-                    {r.note && <div style={{ marginTop: 6 }}>{r.note}</div>}
-                    <small className="muted">{new Date(r.created_at).toLocaleString()}</small>
                   </div>
+                  <span className="badge">{a.id}</span>
+                </div>
 
-                  <button className="btn btn-danger" onClick={() => deleteRedemption(r.id)}>
-                    Zmazať
-                  </button>
+                {/* krátky výpis - nebudeme ukazovať celé JSONy */}
+                <div className="muted" style={{ marginTop: 8 }}>
+                  {summarizeAuditDetails(a)}
                 </div>
               </div>
             ))}
@@ -292,61 +377,256 @@ export default function AdminPage() {
   );
 }
 
-function AdminCard({
+function PointReqCard({
   r,
-  name,
+  fullName,
   onDecide,
+  disabled,
 }: {
-  r: Req;
-  name: string;
+  r: PointReq;
+  fullName: string;
   onDecide: (id: number, status: "approved" | "rejected", admin_comment: string, newPoints?: number) => Promise<void>;
+  disabled: boolean;
 }) {
-  const [comment, setComment] = useState("");
+  const [comment, setComment] = useState(r.admin_comment ?? "");
   const [points, setPoints] = useState<number>(r.points);
 
   return (
     <div className="item">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <div>
-          <b>{name}</b> • {r.activity_date} • <span className="muted">{r.category}</span>
+          <b>{fullName}</b> • {r.activity_date} • <span className="muted">{r.category}</span>
         </div>
-        <span className="badge pending">pending</span>
+        <span className={badgeClassByStatus(r.status)}>{skStatus(r.status)}</span>
       </div>
 
       {r.note && <div style={{ marginTop: 8 }}>{r.note}</div>}
 
-      <div className="row" style={{ marginTop: 10 }}>
+      <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
         <label className="label" style={{ width: 160 }}>
-          Body (môžeš upraviť)
+          Body
           <input
             className="input"
             type="number"
             min={1}
-            max={1000}
+            max={10000}
             value={points}
             onChange={(e) => setPoints(Number(e.target.value))}
+            disabled={disabled}
           />
         </label>
 
-        <label className="label" style={{ flex: 1, minWidth: 240 }}>
+        <label className="label" style={{ flex: 1, minWidth: 220 }}>
           Komentár admina
-          <input
-            className="input"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="napr. schválené / upravené body…"
-          />
+          <input className="input" value={comment} onChange={(e) => setComment(e.target.value)} disabled={disabled} />
         </label>
       </div>
 
       <div className="row" style={{ marginTop: 10 }}>
-        <button className="btn btn-primary" onClick={() => onDecide(r.id, "approved", comment, points)}>
+        <button className="btn btn-primary" onClick={() => onDecide(r.id, "approved", comment, points)} disabled={disabled}>
           Schváliť
         </button>
-        <button className="btn btn-danger" onClick={() => onDecide(r.id, "rejected", comment)}>
+        <button className="btn btn-danger" onClick={() => onDecide(r.id, "rejected", comment)} disabled={disabled}>
           Zamietnuť
         </button>
       </div>
     </div>
   );
+}
+
+function RewardRow({
+  rw,
+  onSave,
+  disabled,
+}: {
+  rw: Reward;
+  onSave: (rewardId: number, patch: Partial<Pick<Reward, "stock_qty" | "cost_points" | "is_active">>) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [stock, setStock] = useState<number>(rw.stock_qty);
+  const [cost, setCost] = useState<number>(Number(rw.cost_points));
+  const [active, setActive] = useState<boolean>(rw.is_active);
+
+  const changed = stock !== rw.stock_qty || cost !== Number(rw.cost_points) || active !== rw.is_active;
+
+  return (
+    <div className="item">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <b>
+            {rw.category}: {rw.name}
+          </b>
+          <div className="muted" style={{ marginTop: 4 }}>
+            ID: {rw.id}
+          </div>
+        </div>
+
+        <div className="row" style={{ gap: 10 }}>
+          <label className="label" style={{ width: 140 }}>
+            Cena (body)
+            <input
+              className="input"
+              type="number"
+              min={1}
+              step={1}
+              value={cost}
+              onChange={(e) => setCost(Number(e.target.value))}
+              disabled={disabled}
+            />
+          </label>
+
+          <label className="label" style={{ width: 120 }}>
+            Sklad (ks)
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step={1}
+              value={stock}
+              onChange={(e) => setStock(Number(e.target.value))}
+              disabled={disabled}
+            />
+          </label>
+
+          <label className="label" style={{ width: 120 }}>
+            Aktívna
+            <select className="select" value={active ? "1" : "0"} onChange={(e) => setActive(e.target.value === "1")} disabled={disabled}>
+              <option value="1">Áno</option>
+              <option value="0">Nie</option>
+            </select>
+          </label>
+
+          <button
+            className="btn btn-primary"
+            disabled={disabled || !changed}
+            onClick={() => onSave(rw.id, { stock_qty: stock, cost_points: cost, is_active: active })}
+          >
+            Uložiť
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RewardReqCard({
+  rr,
+  fullName,
+  onDecide,
+  onFulfill,
+  disabled,
+}: {
+  rr: RewardReq;
+  fullName: string;
+  onDecide: (id: number, status: "approved" | "rejected", admin_comment: string) => Promise<void>;
+  onFulfill: (id: number) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [comment, setComment] = useState(rr.admin_comment ?? "");
+
+  const canApproveReject = rr.status === "pending";
+  const canFulfill = rr.status === "approved";
+
+  const rewardTitle = rr.rewards
+    ? `${rr.rewards.category}: ${rr.rewards.name}`
+    : `reward #${rr.reward_id}`;
+
+  return (
+    <div className="item">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <div>
+          <b>{fullName}</b> • {rewardTitle}
+          <div className="muted" style={{ marginTop: 4 }}>
+            qty {rr.qty} • cena {rr.points_cost} b • sklad: {rr.rewards?.stock_qty ?? "—"}
+          </div>
+        </div>
+        <span className={badgeClassByStatus(rr.status)}>{skStatus(rr.status)}</span>
+      </div>
+
+      {rr.user_note && <div style={{ marginTop: 8 }}>{rr.user_note}</div>}
+
+      <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
+        <label className="label" style={{ flex: 1, minWidth: 260 }}>
+          Komentár admina
+          <input className="input" value={comment} onChange={(e) => setComment(e.target.value)} disabled={disabled} />
+        </label>
+
+        <div className="row" style={{ gap: 10 }}>
+          <button
+            className="btn btn-primary"
+            disabled={disabled || !canApproveReject}
+            onClick={() => onDecide(rr.id, "approved", comment)}
+          >
+            Schváliť
+          </button>
+
+          <button
+            className="btn btn-danger"
+            disabled={disabled || !canApproveReject}
+            onClick={() => onDecide(rr.id, "rejected", comment)}
+          >
+            Zamietnuť
+          </button>
+
+          <button
+            className="btn btn-primary"
+            disabled={disabled || !canFulfill}
+            onClick={() => onFulfill(rr.id)}
+            title="Vydá odmenu, odpočíta body a zníži sklad"
+          >
+            Vydať
+          </button>
+        </div>
+      </div>
+
+      <div className="muted" style={{ marginTop: 8 }}>
+        request #{rr.id} • {new Date(rr.created_at).toLocaleString()}
+        {rr.decided_at ? ` • rozhodnuté: ${new Date(rr.decided_at).toLocaleString()}` : ""}
+        {rr.fulfilled_at ? ` • vydané: ${new Date(rr.fulfilled_at).toLocaleString()}` : ""}
+      </div>
+    </div>
+  );
+}
+
+function summarizeAuditDetails(a: AuditRow) {
+  try {
+    const d = a.details ?? {};
+    const n = d.new ?? null;
+    const o = d.old ?? null;
+
+    // vyberieme pár vecí, aby to nebolo obrovské
+    if (a.table_name === "point_requests") {
+      const st = n?.status ?? o?.status;
+      const pts = n?.points ?? o?.points;
+      const uid = n?.user_id ?? o?.user_id;
+      return `user_id=${uid ?? "—"} • status=${st ?? "—"} • points=${pts ?? "—"}`;
+    }
+
+    if (a.table_name === "reward_requests") {
+      const st = n?.status ?? o?.status;
+      const uid = n?.user_id ?? o?.user_id;
+      const rid = n?.reward_id ?? o?.reward_id;
+      const qty = n?.qty ?? o?.qty;
+      const cost = n?.points_cost ?? o?.points_cost;
+      return `user_id=${uid ?? "—"} • reward_id=${rid ?? "—"} • qty=${qty ?? "—"} • cost=${cost ?? "—"} • status=${st ?? "—"}`;
+    }
+
+    if (a.table_name === "redemptions") {
+      const uid = n?.user_id ?? o?.user_id;
+      const rid = n?.reward_id ?? o?.reward_id;
+      const pts = n?.points_spent ?? o?.points_spent;
+      return `user_id=${uid ?? "—"} • reward_id=${rid ?? "—"} • spent=${pts ?? "—"}`;
+    }
+
+    if (a.table_name === "rewards") {
+      const name = n?.name ?? o?.name;
+      const stock = n?.stock_qty ?? o?.stock_qty;
+      const cost = n?.cost_points ?? o?.cost_points;
+      return `${name ?? "reward"} • stock=${stock ?? "—"} • cost=${cost ?? "—"}`;
+    }
+
+    return "Záznam uložený.";
+  } catch {
+    return "Záznam uložený.";
+  }
 }
