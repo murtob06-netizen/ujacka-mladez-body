@@ -298,3 +298,19 @@ small{ color: var(--muted); }
   }
 }
 
+.posGrid{
+  display:grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap:16px;
+}
+
+@media (max-width: 900px){
+  .posGrid{ grid-template-columns: 1fr; }
+}
+
+.success{
+  background: rgba(16,185,129,.12);
+  border: 1px solid rgba(16,185,129,.25);
+  padding: 10px 12px;
+  border-radius: 12px;
+}
