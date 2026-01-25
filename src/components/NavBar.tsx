@@ -1,57 +1,40 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "../lib/supabaseClient";
+import { getMyProfile } from "../lib/auth";
 
 export default function NavBar() {
-  const [pendingCount, setPendingCount] = useState<number>(0);
+  const [role, setRole] = useState<string>("");
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadCount() {
-      const { count, error } = await supabase
-        .from("point_requests")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
-
-      if (!cancelled) {
-        setPendingCount(error ? 0 : (count ?? 0));
-      }
-    }
-
-    loadCount();
-    const timer = setInterval(loadCount, 20000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    (async () => {
+      const { profile } = await getMyProfile();
+      setRole(profile?.role ?? "");
+    })();
   }, []);
+
+  const canPos = role === "admin" || role === "cashier";
 
   return (
     <nav className="nav nav-hero">
       <a href="/" style={{ color: "white" }}>Dashboard</a>
       <a href="/leaderboard" style={{ color: "white" }}>Rebríček</a>
+      <a href="/rewards" style={{ color: "white" }}>Odmeny</a>
 
-      <a href="/admin" style={{ color: "white" }}>
-        Admin
-        {pendingCount > 0 && (
-          <span
-            style={{
-              marginLeft: 6,
-              background: "#dc2626",
-              color: "white",
-              borderRadius: 999,
-              padding: "2px 8px",
-              fontSize: 12,
-              fontWeight: 900,
-            }}
-          >
-            {pendingCount}
-          </span>
-        )}
-      </a>
+      {canPos && (
+        <>
+          <a href="/pos" style={{ color: "white" }}>Pokladňa</a>
+          <a href="/pos/products" style={{ color: "white" }}>POS Produkty</a>
+        </>
+      )}
+
+      {role === "admin" && (
+        <>
+          <a href="/reports" style={{ color: "white" }}>Reporty</a>
+          <a href="/admin" style={{ color: "white" }}>Admin</a>
+        </>
+      )}
 
       <a href="/auth" style={{ color: "white" }}>Login</a>
     </nav>
