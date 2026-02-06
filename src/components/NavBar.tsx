@@ -32,11 +32,12 @@ export default function NavBar() {
       {role === "admin" && (
         <>
           <a href="/reports" style={{ color: "white" }}>Reporty</a>
+          <a href="/kiosk" style={{ color: "white" }}>Kiosk</a>
           <a href="/admin" style={{ color: "white" }}>Admin</a>
         </>
       )}
 
-      <a href="/auth" style={{ color: "white" }}>Login</a>
+      <a href="/auth" style={{ color: "white" }}>Prihlásenie</a>
     </nav>
   );
 }
