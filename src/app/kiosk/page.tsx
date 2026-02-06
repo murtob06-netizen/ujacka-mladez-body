@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { BrowserQRCodeReader, IScannerControls } from "@zxing/browser";
 import { supabase } from "@/lib/supabaseClient";
 import { getMyProfile } from "@/lib/auth";
 
@@ -14,6 +15,8 @@ export default function KioskPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
+  const [scanErr, setScanErr] = useState<string>("");
+  const [scanning, setScanning] = useState(false);
 
   const [token, setToken] = useState("");
   const [points, setPoints] = useState(5);
@@ -21,6 +24,9 @@ export default function KioskPage() {
   const [note, setNote] = useState("QR check-in");
   const [busy, setBusy] = useState(false);
   const [lastUserId, setLastUserId] = useState<string>("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const readerRef = useRef<BrowserQRCodeReader | null>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -29,6 +35,44 @@ export default function KioskPage() {
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      controlsRef.current?.stop();
+    };
+  }, []);
+
+  async function startScan() {
+    setScanErr("");
+    setSuccess("");
+    setScanning(true);
+
+    try {
+      if (!readerRef.current) readerRef.current = new BrowserQRCodeReader();
+      if (!videoRef.current) return;
+
+      controlsRef.current = await readerRef.current.decodeFromVideoDevice(
+        undefined,
+        videoRef.current,
+        (result) => {
+          if (result) {
+            setToken(result.getText());
+            setSuccess("QR načítaný.");
+            stopScan();
+          }
+        }
+      );
+    } catch (e: any) {
+      setScanErr(e?.message ?? "Nepodarilo sa spustiť skener.");
+      setScanning(false);
+    }
+  }
+
+  function stopScan() {
+    controlsRef.current?.stop();
+    controlsRef.current = null;
+    setScanning(false);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -114,6 +158,24 @@ export default function KioskPage() {
               placeholder="napr. 7d8f…"
             />
           </label>
+
+          <div className="scanner">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div className="muted">Skener kamery</div>
+              {scanning ? (
+                <button className="btn btn-ghost btn-small" type="button" onClick={stopScan}>
+                  Zastaviť
+                </button>
+              ) : (
+                <button className="btn btn-ghost btn-small" type="button" onClick={startScan}>
+                  Spustiť skener
+                </button>
+              )}
+            </div>
+
+            <video className="video-preview" ref={videoRef} muted playsInline />
+            {scanErr && <p className="error">{scanErr}</p>}
+          </div>
 
           <div className="row">
             <label className="label" style={{ width: 160 }}>

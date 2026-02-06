@@ -297,6 +297,20 @@ small{ color: var(--muted); }
   display:grid;
   gap:10px;
 }
+.scanner{
+  border:1px dashed #d9e7e4;
+  border-radius:14px;
+  padding:12px;
+  background:#f7faf9;
+}
+.video-preview{
+  width:100%;
+  max-height:360px;
+  border-radius:12px;
+  background:#0f172a;
+  margin-top:10px;
+  object-fit:cover;
+}
 .toggle{
   display:flex;
   align-items:center;
